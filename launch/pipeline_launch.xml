@@ -1,0 +1,16 @@
+<launch>
+    <!-- Launch the ROS 2 bag play node -->
+    <node
+        pkg="sam_graph_slam_2"
+        exec="pipeline_dr_gt_publisher_node"
+        name="Pipeline_dr_and_gt_publisher_node"
+        output="screen">
+    </node>
+
+    <node
+        pkg="sam_graph_slam_2"
+        exec="pipeline_detector_node"
+        name="pipeline_detector_node"
+        output="screen">
+    </node>
+</launch>
