@@ -41,12 +41,12 @@ try:
     from .detectors.consts import ObjectID
     from .detectors.process_pointcloud2 import ProcessPointCloud2
     # from .detectors import process_pointcloud2  # this was not working when launched from ros2
-    from .helpers.ros_helpers import ros_time_to_seconds, ros_times_delta_seconds
+    from .helpers.ros_helpers import ros_time_to_secs, rcl_times_delta_secs
 except:
     from detectors.consts import ObjectID
-    from .detectors.process_pointcloud2 import ProcessPointCloud2
+    from detectors.process_pointcloud2 import ProcessPointCloud2
     from detectors import process_pointcloud2  # This was working
-    from helpers.ros_helpers import ros_time_to_seconds, ros_times_delta_seconds
+    from helpers.ros_helpers import ros_time_to_secs, rcl_times_delta_secs
 
 
 '''
@@ -110,42 +110,67 @@ def stamped_transform_to_rotation_matrix(transform_stamped: TransformStamped):
 
 
 class PointCloudDetector(Node):
-    def __init__(self, topic: str = '/sam0/mbes/odom/bathy_points',
-                 save_data: bool = False,
-                 save_location: str = '',
-                 save_timeout: float = 10):
+    def __init__(self,
+                 save_data: bool = None,
+                 output_path: str = None,
+                 save_timeout: float = None):
         super().__init__('point_cloud_detector')
+        self.get_logger().info(f"Created PointCloudDetector node: {self.get_name()}")
+
+        self.declare_node_parameters()
 
         # Set up TF listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # === Names ===
-        # Robot name
-        self.robot_name = 'sam'
+        # Data recording setting
+        if save_data is None:
+            self.save_data = self.get_parameter("save_data").value
+        else:
+            self.save_data = save_data
 
+        # Set output path
+        if output_path is None:
+            self.output_path = self.get_parameter("output_path").value
+        else:
+            self.output_path= output_path
+
+        # Check output_path
+        if os.path.isdir(self.output_path):
+            self.output_path = self.output_path + '/'
+        else:
+            self.output_path = ''
+
+        # Set save timeout
+        if save_timeout is None:
+            self.save_timeout = self.get_parameter("save_timeout").value
+        else:
+            self.save_timeout = save_timeout  # save time  out
+
+        # === Names ===
         # Subscription topic name(s)
-        self.point_cloud_topic = topic
+        self.point_cloud_topic = self.get_parameter("point_cloud_topic").value
+
+        # Robot name
+        self.robot_name = self.get_parameter("robot_name").value
 
         # publisher topic name(s)
         self.detection_topic = f'/{self.robot_name}/payload/sidescan/detection_hypothesis'
         self.detection_marker_topic = '/detection_marker'
 
         # Data frame setting
-        self.data_frame = 'odom'  # 'map' from given mbes data
-        self.robot_frame = 'sam0'  # 'sam0_base_link' transform into robot frame
+        self.data_frame = self.get_parameter("data_frame").value  # 'map' from given mbes data
+        self.robot_frame = self.get_parameter("robot_frame").value  # 'sam0_base_link' transform into robot frame
+        # This is currently unused
+        # point cloud registration would require projecting the relative point cloud returns from the
+        # dr frame
         self.dr_tf_frame = 'dr_frame'  # frame of dr, used to transform mbes pointcloud
 
         # Verbose
-        # TODO figure out parameters in ROS2
-        # self.verbose_detector = self.declare_parameter('verbose_detector', False)
-        # assert isinstance(self.verbose_detector, bool)
-        self.verbose_detector = True
+        self.verbose_detector_timing = self.get_parameter("verbose_detector_timing").value
 
-        # Data recording setting
-        self.save_data = save_data
-        # self.save_timeout = rospy.Duration.from_sec(save_timeout)  # ROS1
-        self.save_timeout = save_timeout  # save time  out
+
+        # States and save locations
         self.last_data_time = None
         self.data_written = False
         self.stacked_pc_original = None
@@ -153,29 +178,18 @@ class PointCloudDetector(Node):
         self.stacked_world_to_robot_transform = None
         self.stacked_robot_to_world_transform = None
 
-        # Data saving settings
-        if os.path.isdir(save_location):
-            self.save_location = save_location + '/'
-        else:
-            self.save_location = ''
 
         # Detector setting
-        # TODO figure out parameters in ROS2
-        # self.min_update_time = self.declare_parameter('detector_min_update_time', False)
-        # assert isinstance(self.verbose_detector, bool)
-        self.min_update_time = 1.0
+        self.min_update_time = self.get_parameter("min_update_time").value
         print(f"Detector min_update_time: {self.min_update_time}")
         self.confidence_dummy = 0.5  # Confidence is just a dummy value for now
 
         # Set up subscriptions
-        # rospy.Subscriber(self.point_cloud_topic, pc2.PointCloud2, self.point_cloud_callback, queue_size=1)  # ROS1
-
         point_cloud_qos_profile = rclpy.qos.QoSProfile(depth=1)  # The hope is to only process the most recent data
         self.pc_sub = self.create_subscription(msg_type=PointCloud2, topic=self.point_cloud_topic,
                                                callback=self.point_cloud_callback, qos_profile=point_cloud_qos_profile)
 
         # Set up a timer to check for data saving periodically
-        # rospy.Timer(self.save_timeout, self.save_timer_callback)  # ROS1
         self.save_timer = self.create_timer(timer_period_sec=self.save_timeout,
                                             callback=self.save_timer_callback)
 
@@ -194,6 +208,26 @@ class PointCloudDetector(Node):
                                                           topic=self.detection_marker_topic,
                                                           qos_profile=10)
 
+    def declare_node_parameters(self):
+        """
+        declares parameters for the node, see template config for more info
+        :return: None
+        """
+        # Output parameters
+        self.declare_parameter("save_data", False)
+        self.declare_parameter("output_path", " ")
+        self.declare_parameter("save_timeout", 5.0)
+        # Topics
+        self.declare_parameter("point_cloud_topic", "/sam0/mbes/odom/bathy_points")
+        self.declare_parameter("robot_name", "sam")
+        # Frames
+        self.declare_parameter("data_frame", "odom")
+        self.declare_parameter("robot_frame", "sam0")
+        # Detector behaviour
+        self.declare_parameter("min_update_time", 1.0)
+        # Verboseness parameters
+        self.declare_parameter("verbose_detector_timing", False)
+
     def point_cloud_callback(self, msg):
         # time_now = rospy.Time.now()  # ROS1
         time_now = self.get_clock().now()
@@ -204,7 +238,7 @@ class PointCloudDetector(Node):
             self.last_data_time = time_now
         # TODO Fix time comparison
         # elif (time_now - self.last_data_time).to_sec() < self.min_update_time:
-        elif ros_times_delta_seconds(time_now, self.last_data_time) < self.min_update_time:
+        elif rcl_times_delta_secs(time_now, self.last_data_time) < self.min_update_time:
             return
         else:
             # Update the last received data time
@@ -254,8 +288,8 @@ class PointCloudDetector(Node):
         # process_end_time = rospy.Time.now()  # ROS1
         process_end_time = self.get_clock().now()
 
-        if self.verbose_detector:
-            process_time_seconds = ros_times_delta_seconds(process_end_time, process_start_time)
+        if self.verbose_detector_timing:
+            process_time_seconds = rcl_times_delta_secs(process_end_time, process_start_time)
             print(f"Detector - Processing time {process_time_seconds:.3f} secs")
 
         if detector.detection_coords_world.size != 3:
@@ -309,8 +343,8 @@ class PointCloudDetector(Node):
         if self.last_data_time is None:
             return
         # if rospy.Time.now() - self.last_data_time > self.save_timeout:
-        delta_time_seconds = ros_times_delta_seconds(time_a=self.get_clock().now(),
-                                                     time_b=self.last_data_time)
+        delta_time_seconds = rcl_times_delta_secs(time_a=self.get_clock().now(),
+                                                  time_b=self.last_data_time)
         if delta_time_seconds > self.save_timeout:
             # Save point cloud data to a CSV file
             if self.save_data:
@@ -325,10 +359,10 @@ class PointCloudDetector(Node):
         elif self.stacked_world_to_robot_transform is None or self.stacked_robot_to_world_transform is None:
             print("No transforms to save.")
         else:
-            original_name = f"{self.save_location}pc_original.npy"
-            transformed_name = f"{self.save_location}pc_transformed.npy"
-            world_to_local_name = f"{self.save_location}world_to_local.npy"
-            local_to_world_name = f"{self.save_location}local_to_world.npy"
+            original_name = f"{self.output_path}pc_original.npy"
+            transformed_name = f"{self.output_path}pc_transformed.npy"
+            world_to_local_name = f"{self.output_path}world_to_local.npy"
+            local_to_world_name = f"{self.output_path}local_to_world.npy"
 
             np.save(original_name, self.stacked_pc_original)
             np.save(transformed_name, self.stacked_pc_transformed)
@@ -420,7 +454,6 @@ class PointCloudDetector(Node):
 
         # Define single ObjectHypothesisWithPose
         object_hypothesis_pose_msg = ObjectHypothesisWithPose()
-
         # set the hypothesis: class id and score
         object_hypothesis_pose_msg.hypothesis.class_id = ObjectID.PIPE.name
 
@@ -440,20 +473,29 @@ class PointCloudDetector(Node):
         return
 
 
-def main(topic: str = None, save_data: bool = False, save_location: str = '',
-         save_timeout: float = 5.0, args=None, ):
+def main(args=None):
     rclpy.init(args=args)
-    pipeline_point_cloud_detector = PointCloudDetector(topic=topic,
-                                                       save_data=save_data,
-                                                       save_location=save_location,
+    pipeline_point_cloud_detector = PointCloudDetector()
+    try:
+        rclpy.spin(pipeline_point_cloud_detector)
+    except KeyboardInterrupt:
+        pass
+        # pipeline_point_cloud_detector.get_logger().info(f"Shutting down")
+        # pipeline_point_cloud_detector.destroy_node()
+        # rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    # parameters
+    save_data = True
+    output_path = '/home/julian/porting_test_data'
+    save_timeout = 5
+
+    rclpy.init(args=None)
+
+    pipeline_point_cloud_detector = PointCloudDetector(save_data=save_data,
+                                                       output_path=output_path,
                                                        save_timeout=save_timeout)
     rclpy.spin(pipeline_point_cloud_detector)
     pipeline_point_cloud_detector.destroy_node()
     rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main(topic='/sam0/mbes/odom/bathy_points',
-         save_data=True,
-         save_location='/home/julian/porting_test_data',
-         save_timeout=5)

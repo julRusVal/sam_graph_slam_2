@@ -10,6 +10,7 @@ import skimage.draw
 from skimage import color
 from skimage.draw import ellipse_perimeter
 from skimage.transform import hough_line, hough_line_peaks, hough_circle, hough_circle_peaks, hough_ellipse
+import skimage.morphology
 #from sklearn.decomposition import PCA
 
 

@@ -4,9 +4,6 @@ import os
 import shutil
 import math
 import numpy as np
-import gtsam
-import networkx as nx
-import matplotlib.pyplot as plt
 import csv
 from enum import Enum
 
@@ -15,6 +12,8 @@ General helper functions
 
 ROS1 version was called sam_slam_helpers.py
 """
+
+
 # ===== General stuff =====
 def overwrite_directory(directory_path):
     if os.path.isdir(directory_path):
@@ -72,7 +71,126 @@ def get_enum_name_or_value(enum_class, value):
         return value
 
 
-def angle_between_rads(target_angle, source_angle):
+# ===== General geometric function =====
+def calculate_angle(x1, y1, x2, y2):
+    dx = x2 - x1
+    dy = y2 - y1
+    angle = math.atan2(dy, dx)
+    return angle
+
+
+def calculate_distance(x1: float, y1: float, x2: float, y2: float) -> float:
+    distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    return distance
+
+
+def calculate_distances(array1: np.ndarray, array2: np.ndarray) -> np.ndarray:
+    # Check if arrays have the same number of points
+    if array1.shape != array2.shape:
+        print("Size mismatch between the arrays.")
+        return None
+
+    # Calculate Euclidean distances
+    distances = np.sqrt(np.sum((array1 - array2) ** 2, axis=1))
+
+    return distances
+
+
+def calculate_center(x1: float, y1: float, x2: float, y2: float) -> np.ndarray:
+    """
+    Calculate the center point of the provided coordinates
+    :param x1: x coordinate point 1
+    :param y1: y coordinate point 1
+    :param x2: x coordinate point 2
+    :param y2: y coordinate point 2
+    :return: (2,) numpy array containing the x and y coordinates of the center
+    """
+    x_center = (x1 + x2) / 2.0
+    y_center = (y1 + y2) / 2.0
+    return np.array((x_center, y_center), dtype=np.float64)
+
+
+def closest_point_distance_to_line_segment(A, B, P):
+    """
+    Calculates the closest point, Q, on a line, defined by A and B, with point P.
+    Also returns  the distance between P and Q.
+
+    :param A: [x, y] start of line segment
+    :param B: [x, y] end of line segment
+    :param P: [x, y] point of interest
+    :return: [Qx, Qy], distance
+    """
+    ABx = B[0] - A[0]
+    ABy = B[1] - A[1]
+    APx = P[0] - A[0]
+    APy = P[1] - A[1]
+
+    dot_product = ABx * APx + ABy * APy
+    length_squared_AB = ABx * ABx + ABy * ABy
+
+    t = dot_product / length_squared_AB
+
+    if t < 0:
+        Qx, Qy = A[0], A[1]
+    elif t > 1:
+        Qx, Qy = B[0], B[1]
+    else:
+        Qx = A[0] + t * ABx
+        Qy = A[1] + t * ABy
+
+    QPx = P[0] - Qx
+    QPy = P[1] - Qy
+
+    distance = math.sqrt(QPx * QPx + QPy * QPy)
+
+    return [Qx, Qy], distance
+
+
+def calculate_line_point_distance(x1: float, y1: float,
+                                  x2: float, y2: float,
+                                  x3: float, y3: float) -> float:
+    """
+    points 1 and 2 form a line segment, point 3 is
+    :param x1:
+    :param y1:
+    :param x2:
+    :param y2:
+    :param x3:
+    :param y3:
+    :return:
+    """
+    if x1 == x2 and y1 == y2:
+        return -1
+
+    # Calculate the length of the line segment
+    line_mag_sqrd = (x2 - x1) ** 2 + (y2 - y1) ** 2
+    u = ((x3 - x1) * (x2 - x1) + (y3 - y1) * (y2 - y1)) / line_mag_sqrd
+
+    if 0 < u < 1.0:
+        x_perpendicular = x1 + u * (x2 - x1)
+        y_perpendicular = y1 + u * (y2 - y1)
+
+        return math.sqrt((x_perpendicular - x3) ** 2 + (y_perpendicular - y3) ** 2)
+
+    else:
+        # Calculate the distance from the third point to each endpoint of the line segment
+        distance_line_end_1 = math.sqrt((x3 - x1) ** 2 + (y3 - y1) ** 2)
+        distance_line_end_2 = math.sqrt((x3 - x2) ** 2 + (y3 - y2) ** 2)
+
+        # Find the minimum distance
+        min_distance = min(distance_line_end_1, distance_line_end_2)
+
+        return min_distance
+
+
+def angle_between_rads(target_angle: float, source_angle: float) -> float:
+    """
+    Return the smallest angle between the two provided angles. Every angle is in radians and the
+    output is bound between +/- pi
+    :param target_angle:
+    :param source_angle:
+    :return:
+    """
     # Bound the angle [-pi, pi]
     target_angle = math.remainder(target_angle, 2 * np.pi)
     source_angle = math.remainder(source_angle, 2 * np.pi)
@@ -102,143 +220,6 @@ def calc_pose_error(array_test: np.ndarray, array_true: np.ndarray):
         theta_error[i] = angle_between_rads(array_test[i, 2], array_true[i, 2])
 
     return np.hstack((pos_error, theta_error))
-
-
-# ===== GTSAM Stuff =====
-# === Pose2 ===
-def create_Pose2(input_pose):
-    """
-    Create a GTSAM Pose3 from the recorded poses in the form:
-    [x,y,z,q_w,q_x,q_,y,q_z]
-    """
-    rot3 = gtsam.Rot3.Quaternion(input_pose[3], input_pose[4], input_pose[5], input_pose[6])
-    rot3_yaw = rot3.yaw()
-    # GTSAM Pose2: x, y, theta
-    return gtsam.Pose2(input_pose[0], input_pose[1], rot3_yaw)
-
-
-def pose2_list_to_nparray(pose_list):
-    out_array = np.zeros((len(pose_list), 3))
-
-    for i, pose2 in enumerate(pose_list):
-        out_array[i, :] = pose2.x(), pose2.y(), pose2.theta()
-
-    return out_array
-
-
-# === Pose3 ====
-def create_Pose3(input_pose):
-    """
-    Create a GTSAM Pose3 from the recorded poses in the form:
-    [x,y,z,q_w,q_x,q_,y,q_z]
-    """
-    rot3 = gtsam.Rot3.Quaternion(input_pose[3], input_pose[4], input_pose[5], input_pose[6])
-    return gtsam.Pose3(r=rot3, t=np.array((input_pose[0], input_pose[1], input_pose[2]), dtype=np.float64))
-
-
-def convert_poses_to_Pose3(poses):
-    """
-    Poses is is of the form: [[x,y,z,q_w,q_x,q_,y,q_z]]
-    """
-    pose3s = []
-    for pose in poses:
-        pose3s.append(create_Pose3(pose))
-
-    return pose3s
-
-
-def apply_transformPoseFrom(pose3s, transform):
-    """
-    pose3s: [gtsam.Pose3]
-    transform: gtsam.Pose3
-
-    Apply the transform given in local coordinates, result is expressed in the world coords
-    """
-    transformed_pose3s = []
-    for pose3 in pose3s:
-        transformed_pose3 = pose3.transformPoseFrom(transform)
-        transformed_pose3s.append(transformed_pose3)
-
-    return transformed_pose3s
-
-
-def merge_into_Pose3(input_pose2, input_rpd):
-    """
-    Create a GTSAM Pose3 from the recorded poses in the form:
-    [x,y,z,q_w,q_x,q_,y,q_z]
-    """
-
-    # Calculate rotation component of Pose3
-    # The yaw is provided by the pose2 and is combined with roll and pitch
-    q_from_rpy = get_quaternion_from_euler(input_rpd[0],
-                                           input_rpd[1],
-                                           input_pose2[2])
-
-    rot3 = gtsam.Rot3.Quaternion(q_from_rpy[0], q_from_rpy[1], q_from_rpy[2], q_from_rpy[3])
-
-    # Calculate translation component of Pose3
-    trans = np.array((input_pose2[0], input_pose2[1], input_rpd[2]), dtype=np.float64)
-
-    return gtsam.Pose3(r=rot3, t=trans)
-
-
-def show_simple_graph_2d(graph, x_keys, b_keys, values, label):
-    """
-    Show Graph of Pose2 and Point2 elements
-    This function does not display data association colors
-
-    """
-    plot_limits = [-12.5, 12.5, -5, 20]
-
-    # Check for buoys
-    if b_keys is None:
-        b_keys = {}
-
-    # Initialize network
-    G = nx.Graph()
-    for i in range(graph.size()):
-        factor = graph.at(i)
-        for key_id, key in enumerate(factor.keys()):
-            # Test if key corresponds to a pose
-            if key in x_keys.values():
-                pos = (values.atPose2(key).x(), values.atPose2(key).y())
-                G.add_node(key, pos=pos, color='black')
-
-            # Test if key corresponds to points
-            elif key in b_keys.values():
-                pos = (values.atPoint2(key)[0], values.atPoint2(key)[1])
-                G.add_node(key, pos=pos, color='yellow')
-            else:
-                print('There was a problem with a factor not corresponding to an available key')
-
-            # Add edges that represent binary factor: Odometry or detection
-            for key_2_id, key_2 in enumerate(factor.keys()):
-                if key != key_2 and key_id < key_2_id:
-                    # detections will have key corresponding to a landmark
-                    if key in b_keys.values() or key_2 in b_keys.values():
-                        G.add_edge(key, key_2, color='red')
-                    else:
-                        G.add_edge(key, key_2, color='blue')
-
-    # ===== Plot the graph using matplotlib =====
-    # Matplotlib options
-    fig, ax = plt.subplots()
-    plt.title(f'Factor Graph\n{label}')
-    ax.set_aspect('equal', 'box')
-    plt.axis(plot_limits)
-    plt.grid(True)
-    plt.xticks(np.arange(plot_limits[0], plot_limits[1] + 1, 2.5))
-
-    # Networkx Options
-    pos = nx.get_node_attributes(G, 'pos')
-    e_colors = nx.get_edge_attributes(G, 'color').values()
-    n_colors = nx.get_node_attributes(G, 'color').values()
-    options = {'node_size': 25, 'width': 3, 'with_labels': False}
-
-    # Plot
-    nx.draw_networkx(G, pos, edge_color=e_colors, node_color=n_colors, **options)
-    np.arange(plot_limits[0], plot_limits[1] + 1, 2.5)
-    plt.show()
 
 
 # ===== 3d geometry utilities =====
@@ -278,6 +259,11 @@ def get_quaternion_from_euler(roll, pitch, yaw):
     qw = np.cos(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) + np.sin(roll / 2) * np.sin(pitch / 2) * np.sin(yaw / 2)
 
     return [qw, qx, qy, qz]
+
+
+# ===== General Math function =====
+def ceiling_division(n, d):
+    return -(n // -d)
 
 
 class odometry_data:

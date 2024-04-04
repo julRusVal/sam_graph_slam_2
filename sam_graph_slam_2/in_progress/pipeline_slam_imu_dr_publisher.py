@@ -273,7 +273,8 @@ class pipeline_sim_dr_publisher:
         self.gt_publisher.publish(gt_pose_msg)
 
     # ===== Transforms and poses =====
-    # See sam_slam_ros_classes.py
+    # See sam_slam_node.py
+    # See sam_slam_node.py
 
     # ===== ROS <--> GTSAM =====
     @staticmethod

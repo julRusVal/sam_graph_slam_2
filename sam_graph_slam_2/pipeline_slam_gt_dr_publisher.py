@@ -19,10 +19,10 @@ from sensor_msgs.msg import Imu
 try:
     # ROS2 IMPORTS
     from .helpers.gtsam_ros_helpers import ros_pose_to_gtsam_pose3_and_stamp, gtsam_pose3_to_ros_pose3
-    from .helpers.ros_helpers import ros_time_to_seconds
+    from .helpers.ros_helpers import ros_time_to_secs, rcl_time_to_secs
 except:
     from helpers.gtsam_ros_helpers import ros_pose_to_gtsam_pose3_and_stamp, gtsam_pose3_to_ros_pose3
-    from helpers.ros_helpers import ros_time_to_seconds
+    from helpers.ros_helpers import ros_time_to_secs, rcl_time_to_secs
 
 """
 Implements dr and gt publisher - dr based on gt
@@ -41,16 +41,19 @@ class PipelineSimDrGtPublisher(Node):
         super().__init__('pipeline_sim_dr_gt_publisher')
         self.get_logger().info('Created: Pipeline Sim Dr Gt Publisher')
 
+        # ===== Declare parameters =====
+        self.declare_node_parameters()
+
         # ===== Topics =====
-        self.gt_topic = '/sam/sim/odom'
-        self.imu_topic = '/sam0/core/imu'
-        self.pub_dr_topic = '/dr_odom'
-        self.pub_gt_topic = '/gt_odom'
+        self.gt_topic = self.get_parameter("gt_topic").value
+        self.imu_topic = self.get_parameter("imu_topic").value
+        self.pub_dr_topic = self.get_parameter("pub_dr_topic").value
+        self.pub_gt_topic = self.get_parameter("pub_gt_topic").value
 
         # ===== Frame and tf stuff =====
-        self.map_frame = 'odom'  # 'map'
-        self.robot_frame = 'sam0_base_link'
-        self.dr_tf_frame = 'dr_frame'  # Currently intended for the detector saving dr poses with pointcloud data
+        self.map_frame = self.get_parameter("map_frame").value  # 'map'
+        self.robot_frame = self.get_parameter("robot_frame").value  # base link of robot
+        self.dr_tf_frame = self.get_parameter("dr_tf_frame").value  # For saving detector dr poses with pointcloud data
 
         # Set up TF broadcaster
         self.tf_br = TransformBroadcaster(self)
@@ -80,9 +83,9 @@ class PipelineSimDrGtPublisher(Node):
         self.gt_publisher = self.create_publisher(msg_type=Odometry, topic=self.pub_gt_topic, qos_profile=10)
 
         # DR noise parameters
-        self.add_noise = True
-        self.bound_depth = True
-        self.bound_pitch_roll = True
+        self.add_noise = self.get_parameter("add_noise").value
+        self.bound_depth = self.get_parameter("bound_depth").value
+        self.bound_pitch_roll = self.get_parameter("bound_pitch_roll").value
 
         # Initialization noise
         self.init_position_sigmas = np.array([1.0, 1.0, 1.0])  # x, y, z
@@ -95,6 +98,29 @@ class PipelineSimDrGtPublisher(Node):
         self.depth_sigma = 0.1
 
         # ===== logging settings =====
+
+    def declare_node_parameters(self):
+        """
+        Declare the relevant parameters for this node
+        :return:
+        """
+
+        # Topics
+        self.declare_parameter("gt_topic", "/sam/sim/odom")
+        self.declare_parameter("imu_topic", "/sam0/core/imu")
+        self.declare_parameter("pub_dr_topic", "/dr_odom")
+        self.declare_parameter("pub_gt_topic", "/gt_odom")
+
+        # ===== Frame and tf stuff =====
+        self.declare_parameter("map_frame", "odom")  # 'map'
+        self.declare_parameter("robot_frame", "sam0_base_link")
+        self.declare_parameter("dr_tf_frame", "dr_frame")
+
+        # DR noise parameters
+        self.declare_parameter("add_noise", True)
+        self.declare_parameter("bound_depth", True)
+        self.declare_parameter("bound_pitch_roll", True)
+
 
     def imu_callback(self, imu_msg: Imu):
         # for simulated data current pose is ground truth
@@ -173,7 +199,7 @@ class PipelineSimDrGtPublisher(Node):
 
         between_pose3 = init_pose3.between(final_pose3)
         # dt = (final_time - init_time).to_sec()  # Old ROS1 w/ rospy approach
-        dt = ros_time_to_seconds(final_time) - ros_time_to_seconds(init_time)
+        dt = ros_time_to_secs(final_time) - ros_time_to_secs(init_time)
 
         new_dr_pose = self.dr_pose3.compose(between_pose3)
 
@@ -278,15 +304,18 @@ class PipelineSimDrGtPublisher(Node):
             self.tf_br.sendTransform(dr_t)
 
         except Exception as e:
-            self.get_logger().error(f"Transform broadcast error: {ros_time_to_seconds(dr_timestamp)}")
+            self.get_logger().error(f"Transform broadcast error: {ros_time_to_secs(dr_timestamp)}")
 
 
 def main(args=None):
     rclpy.init(args=args)
     pipeline_sim_dr_gt_publisher = PipelineSimDrGtPublisher()
-    rclpy.spin(pipeline_sim_dr_gt_publisher)
-    pipeline_sim_dr_gt_publisher.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(pipeline_sim_dr_gt_publisher)
+    except KeyboardInterrupt:
+        pass
+    # pipeline_sim_dr_gt_publisher.destroy_node()
+    # rclpy.shutdown()
 
 
 if __name__ == '__main__':

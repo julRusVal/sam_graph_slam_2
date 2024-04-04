@@ -1,0 +1,147 @@
+# This will serve as a template for configs
+
+# Parameters for PipelineSimDrGtPublisher
+# Entry point: pipeline_dr_gt_publisher_node = sam_graph_slam_2.pipeline_slam_gt_dr_publisher:main
+pipeline_dr_gt_publisher_node:
+  ros__parameters:
+    gt_topic: "/sam/sim/odom"
+    imu_topic: "/sam0/core/imu"
+    pub_dr_topic: "/dr_odom"
+    pub_gt_topic: "/gt_odom"
+    map_frame: "odom"
+    robot_frame: "sam0_base_link"
+    dr_tf_frame: "dr_frame"
+    dr_noise: True
+    bound_depth: True
+    bound_pitch_roll: True
+
+
+# Parameters for PointCloudDetector
+# Entry point: pipeline_detector_node = sam_graph_slam_2.pipeline_point_cloud_detector:main
+pipeline_detector_node:
+  ros__parameters:
+    # Output parameters
+    save_data: True
+    output_path: "/home/julian/testing_files"
+    save_timeout: 5.0
+    # Topic parameters
+    point_cloud_topic: '/sam0/mbes/odom/bathy_points'
+    robot_name: "sam"
+    # The detections are published '/{robot_name}/payload/sidescan/detection_hypothesis'
+    # Frame parameters
+    data_frame: 'odom'
+    robot_frame: 'sam0'
+    # Detector behaviour
+    min_update_time: 1.0
+    # Verboseness
+    verbose_detector_timing: False
+
+
+# Parameters for
+# Entry point: sam_slam_node = sam_graph_slam_2.sam_slam_ros_classes:main
+sam_slam_node:
+  ros__parameters:
+    ## ROS node parameters
+    # Output path
+    output_path: "/home/julian/testing_files"
+    # Scenario
+    simulated_data: True
+    simulated_detections: False
+    pipeline_scenario: True
+    record_ground_truth: True
+    pipeline_lines: "[[0, 1], [1, 2], [2, 3]]"  # Pipeline
+    pipeline_colors: "[[1.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 0.0, 1.0]]"
+    # Graph input parameters
+    prioritize_buoy_detections: True
+    manual_associations: False
+    rope_associations: True
+    # Topic names
+    robot_name: "sam"
+    # Currently most topics are set using the simulated_data and pipeline_scenario parameters
+    # The goal is to set all scenario specific values from a config yaml
+    # Frame names
+    map_frame: "odom"
+    # Also accessed by the graph
+    # Timing
+    dr_update_time: 2.0
+    detect_update_time: 0.5
+    camera_update_time: 0.5
+    sss_update_time: 5.0
+    # Verboseness
+    verbose_listener_DRs: False
+    verbose_listener_detections: True
+    verbose_listener_sonars: False
+    verbose_listener_buoys: False
+    verbose_listener_cameras: False
+
+    ## Graph parameters
+    # Ideally, these should be passed to the graph object without ROS
+    # Parameters shared with the ROS node: map_frame, manual_associations
+
+    # Frames
+    # map_frame shared with ROS node
+    robot_frame: "sam0"
+    est_frame: "estimated/base_link"
+    # DA parameters
+    # manual_associations shared with ROS node
+    buoy_seq_ids: "[]"
+    buoy_line_ids: "[]"
+    # Buoy DA thresholds
+    da_distance_threshold: 50.0
+    da_m_distance_threshold: -1.0
+    # Rope detection parameters
+    individual_rope_detections: True
+    use_rope_detections: True
+    rope_batch_size: 0
+    # Rope update method using line DA
+    rope_batch_by_line: False
+    rope_batch_by_line_timeout: 100
+    batch_by_swath: False  # will override rope batching
+    # Swath update method parameters
+    swath_seq_ids: "[]"  # list[list[int, int]]
+    # Allows for manual DA of rope detections by swath
+    swath_line_ids: "[]"  # list[int]
+    batch_by_swath_manual_rope_da: False
+    # Prior updating parameter
+    update_priors: False
+    # Sigmas
+    # Agent prior sigmas
+    prior_ang_sig_deg: 10.0
+    prior_dist_sig: 1.0
+    # buoy prior sigmas
+    buoy_dist_sig: 1.0
+    # rope prior sigmas
+    rope_dist_sig: 15.0  # Used in the naive
+    rope_along_sig: -0.50  # Negative value will scale rope length, Used for less naive rope priors
+    rope_cross_sig: 1.0  # Used for less naive rope priors
+    # agent odometry sigmas
+    odo_ang_sig_deg: 0.5
+    odo_dist_sig: 0.1
+    # detection sigmas
+    # buoys (points)
+    point_detect_ang_sig_deg: 0.5
+    point_detect_dist_sig: 0.1
+    # ropes (lines)
+    line_detect_ang_sig_deg: 1.0
+    line_detect_dist_sig: .1
+    # Verbose parameters
+    verbose_graph_update: True
+    verbose_graph_rope_detections: True
+    verbose_graph_rope_batching: False
+    verbose_graph_buoy_detections: False
+    verbose_graph_rope_associations: True
+    verbose_graph_buoy_associations: False
+
+
+# Parameters for
+# Entry point pipeline_map_node = sam_graph_slam_2.pipeline_map_publisher:main
+pipeline_map_node:
+  ros__parameters:
+    robot_name: "sam"
+    map_frame: "odom"
+    simulated_data: True
+    pipeline_end_coords: "[[-260, -829], [-263, -930], [-402, -1081], [-403, -1178]]"
+    pipeline_depth: -85.0
+    pipeline_lines: "[[0, 1],[1, 2],[2, 3]]"
+    pipeline_colors: "[[1.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 0.0, 1.0]]"
+    verbose_map_publish: False
