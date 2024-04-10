@@ -28,13 +28,24 @@ class CPDDetector:
     def detect(self, ping):
         """Detection returns a dictionary with key being ObjectID and
         value being a dictionary of position and confidence of the
-        detection."""
+        detection.
+
+        If no nadir is detected, returns and empty dictionary"""
         detections = {}
 
+        # Detect nadir, if this fails rope and buoy detection is not performed
         nadir_idx = self._detect_nadir(ping)
+        if not nadir_idx:
+            return detections
+
+        if nadir_idx >= ping.shape[1]:
+            return detections
+
+        # Rope and buoy detection
         rope = self._detect_rope(ping, nadir_idx)
         buoy = self._detect_buoy(ping, nadir_idx)
 
+        # Construct detection dictionary
         detections[ObjectID.NADIR] = {'pos': nadir_idx, 'confidence': .9}
         if rope:
             detections[ObjectID.ROPE] = {
@@ -51,9 +62,7 @@ class CPDDetector:
     def detect_rope(self, ping, max_idx=150):
         """Detection returns a dictionary with key being ObjectID and
         value being a dictionary of position and confidence of the
-        detection.
-
-        This version does not attempt to detect the nadir"""
+        detection."""
         detections = {}
 
         rope = self._detect_rope(ping, max_idx)
@@ -63,7 +72,18 @@ class CPDDetector:
                 'pos': rope[0][0],
                 'confidence': rope[1]
             }
+
         return detections
+
+    def detect_nadir(self, ping_port, ping_starboard):
+
+        # Combine the port and starboard
+        ping_max = np.maximum(ping_port, ping_starboard)
+
+        # Find nadir index of the max
+        nadir_ind = self._detect_nadir(ping_max)
+
+        return nadir_ind
 
     def _compare_region_with_surrounding(self, ping, bkps, window_size=50):
         region_mean = np.mean(ping[bkps[0]:bkps[1]])
@@ -100,25 +120,36 @@ class CPDDetector:
                                                  width=self.buoy_width,
                                                  n_bkps=n_bkps)
 
-        # Check whether the segmentation is likely to be a buoy
-        if bkps[1] - bkps[0] > self.buoy_width * 2 or bkps[1] - bkps[
-            0] < self.buoy_width * .5:
+        # check that at least two change points were returned
+        if len(bkps) < 2:
             return None
-        mean_diff_ratio = self._compare_region_with_surrounding(ping, bkps)
 
+        # Check whether the segmentation is likely to be a buoy based on down range 'size'
+        if bkps[1] - bkps[0] > self.buoy_width * 2 or bkps[1] - bkps[0] < self.buoy_width * .5:
+            return None
+
+        # Check whether the segmentation is likely to be a buoy based difference ratio
+        mean_diff_ratio = self._compare_region_with_surrounding(ping, bkps)
         if mean_diff_ratio < self.min_mean_diff_ratio:
             return None
+
+        # confidence:
         confidence = 1 / mean_diff_ratio
+
         return bkps, confidence
 
-    def _detect_nadir(self, ping):
+    def _detect_nadir(self, ping, start_idx=100, width=100):
         """Use window sliding segmentation to provide tentative
         nadir location annotation. Return detected nadir index."""
         bkps = self._window_sliding_segmentation(ping=ping,
                                                  n_bkps=1,
-                                                 start_idx=50,
+                                                 start_idx=start_idx,
                                                  end_idx=ping.shape[0],
-                                                 width=100)
+                                                 width=width)
+
+        if len(bkps) == 0:
+            return None
+
         return bkps[0]
 
     def _window_sliding_segmentation(self, ping, n_bkps, start_idx, end_idx,

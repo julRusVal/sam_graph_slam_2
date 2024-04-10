@@ -72,7 +72,7 @@ class sss_detector:
         self. rope_label = 'Rope'
         self.buoy_label = 'Buoy'
 
-        #
+        # The colors need to specified as floats, 0-1
         self.labels = {self.nadir_label: self.nadir_color/255.0,
                        self.rope_label: self.rope_color/255.0,
                        self.buoy_label: self.buoy_color/255.0}
@@ -149,10 +149,10 @@ class sss_detector:
 
 if __name__ == '__main__':
     # %% Processing parameters
-    data_file = '/home/julian/sss_data/sss_data_885.jpg'  # 'data/sss_data_1.png'
+    data_file = '/home/julian/sss_data/sss_data_1450.jpg'  # 'data/sss_data_1.png'
     start_ind = 0  # 3400  # 3400  # 6300
     end_ind = 0  # 4600  # 5700  # 7200
-    max_nadir_depth = 400
+    max_nadir_depth = 0
 
     show_max = True
     perform_detections = True
