@@ -10,7 +10,7 @@ from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-from tf2_ros import TransformException
+from tf2_ros import TransformException, ConnectivityException
 
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Odometry

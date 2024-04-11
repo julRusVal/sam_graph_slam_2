@@ -15,68 +15,69 @@ import numpy as np
 from matplotlib import pyplot as plt
 import cv2 as cv
 
-from sam_graph_slam_2.detectors.sss_image_detector import process_sss, concat_arrays_with_time_threshold, safe_vstack
+from sam_graph_slam_2.detectors.sss_image_detector import process_sss, concat_arrays_with_time_threshold, safe_vstack, \
+    overlay_detections_simple
 
 
-def overlay_detections_simple(image: np.ndarray,
-                              buoys: np.ndarray,
-                              port: np.ndarray,
-                              star: np.ndarray,
-                              title: str | None = None):
-    """
-    buoy_detections is [data index, time, range index]
-
-    :return:
-    """
-    # Plotting parameters
-    circ_rad = 10
-    circ_thick = 2
-    rope_color = np.array([0, 255, 0], dtype=np.uint8)
-    buoy_color = np.array([0, 0, 255], dtype=np.uint8)
-
-    # Raw image converted to RGBd
-    img_color = np.dstack((image, image, image))
-    img_combined = np.copy(img_color)
-
-    # Buoy
-    if buoys is not None:
-        buoys_indices = buoys[:, [0, 2]].astype(int)
-        for center in buoys_indices:
-            # Color is reversed because cv assumes bgr??
-            color = buoy_color[::-1]  # (color[0], color[1], color[2])
-            color_tup = (255, 0, 0)
-            cv.circle(img_combined, (center[1], center[0]),
-                      radius=circ_rad, color=color_tup, thickness=circ_thick)
-
-    # Ropes
-    # Port and star rope inds are purely range measurements
-    # This required offsetting for correct plotting
-    if port is not None:
-        # (image.shape[1]//2 - 1)
-        port[:, 2] = 1000 - port[:, 2]
-    if star is not None:
-        star[:, 2] = 1000 + star[:, 2]
-
-    # combine port ans starboard detections
-    ropes_combined = safe_vstack(port, star)
-
-    if ropes_combined is not None:
-        ropes = ropes_combined[:, [0, 2]].astype(int)
-        img_combined[ropes[:, 0], ropes[:, 1]] = rope_color
-
-    detect_fig, (ax1, ax2) = plt.subplots(1, 2)
-    if title is None:
-        detect_fig.suptitle(f'Detection overlay')
-    else:
-        detect_fig.suptitle(f'{title} Detection overlay')
-
-    ax1.title.set_text('Original')
-    ax1.imshow(img_color)
-
-    ax2.title.set_text('Combined detections')
-    ax2.imshow(img_combined)
-    plt.gcf().set_dpi(300)
-    plt.show()
+# def overlay_detections_simple(image: np.ndarray,
+#                               buoys: np.ndarray,
+#                               port: np.ndarray,
+#                               star: np.ndarray,
+#                               title: str | None = None):
+#     """
+#     buoy_detections is [data index, time, range index]
+#
+#     :return:
+#     """
+#     # Plotting parameters
+#     circ_rad = 10
+#     circ_thick = 2
+#     rope_color = np.array([0, 255, 0], dtype=np.uint8)
+#     buoy_color = np.array([0, 0, 255], dtype=np.uint8)
+#
+#     # Raw image converted to RGBd
+#     img_color = np.dstack((image, image, image))
+#     img_combined = np.copy(img_color)
+#
+#     # Buoy
+#     if buoys is not None:
+#         buoys_indices = buoys[:, [0, 2]].astype(int)
+#         for center in buoys_indices:
+#             # Color is reversed because cv assumes bgr??
+#             color = buoy_color[::-1]  # (color[0], color[1], color[2])
+#             color_tup = (255, 0, 0)
+#             cv.circle(img_combined, (center[1], center[0]),
+#                       radius=circ_rad, color=color_tup, thickness=circ_thick)
+#
+#     # Ropes
+#     # Port and star rope inds are purely range measurements
+#     # This required offsetting for correct plotting
+#     if port is not None:
+#         # (image.shape[1]//2 - 1)
+#         port[:, 2] = 1000 - port[:, 2]
+#     if star is not None:
+#         star[:, 2] = 1000 + star[:, 2]
+#
+#     # combine port ans starboard detections
+#     ropes_combined = safe_vstack(port, star)
+#
+#     if ropes_combined is not None:
+#         ropes = ropes_combined[:, [0, 2]].astype(int)
+#         img_combined[ropes[:, 0], ropes[:, 1]] = rope_color
+#
+#     detect_fig, (ax1, ax2) = plt.subplots(1, 2)
+#     if title is None:
+#         detect_fig.suptitle(f'Detection overlay')
+#     else:
+#         detect_fig.suptitle(f'{title} Detection overlay')
+#
+#     ax1.title.set_text('Original')
+#     ax1.imshow(img_color)
+#
+#     ax2.title.set_text('Combined detections')
+#     ax2.imshow(img_combined)
+#     plt.gcf().set_dpi(300)
+#     plt.show()
 
 
 def overlay_detections(image: np.ndarray,
@@ -254,7 +255,6 @@ if __name__ == '__main__':
 
         online_analysis.perform_algae_farm_detection()
 
-
         # ===== Updates =====
         # Buoy
         if online_analysis.final_bouys is not None:
@@ -265,9 +265,9 @@ if __name__ == '__main__':
             if online_buoys is None:
                 online_buoys = offset_online_buoys
             else:
-                online_buoys = concat_arrays_with_time_threshold(online_buoys,
-                                                                 offset_online_buoys,
-                                                                 time_threshold)
+                online_buoys, _ = concat_arrays_with_time_threshold(online_buoys,
+                                                                    offset_online_buoys,
+                                                                    time_threshold)
 
         if online_analysis.final_ropes_port is not None:
             offset_ropes_port = online_analysis.final_ropes_port.copy()
@@ -276,9 +276,9 @@ if __name__ == '__main__':
             if online_port is None:
                 online_port = offset_ropes_port
             else:
-                online_port = concat_arrays_with_time_threshold(online_port,
-                                                                offset_ropes_port,
-                                                                time_threshold)
+                online_port, _ = concat_arrays_with_time_threshold(online_port,
+                                                                   offset_ropes_port,
+                                                                   time_threshold)
 
         if online_analysis.final_ropes_star is not None:
             offset_ropes_star = online_analysis.final_ropes_star.copy()
@@ -287,9 +287,9 @@ if __name__ == '__main__':
             if online_star is None:
                 online_star = offset_ropes_star
             else:
-                online_star = concat_arrays_with_time_threshold(online_star,
-                                                                offset_ropes_star,
-                                                                time_threshold)
+                online_star, _ = concat_arrays_with_time_threshold(online_star,
+                                                                   offset_ropes_star,
+                                                                   time_threshold)
 
     overlay_detections_simple(image=sss_data,
                               buoys=online_buoys,

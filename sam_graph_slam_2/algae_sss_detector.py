@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import os
-import cv2
+import cv2 as cv
 import numpy as np
 from PIL import Image
 
@@ -48,12 +48,6 @@ class SSSDetector(Node):
         else:
             self.time_out = 5.0
 
-        # buffer is used for output
-        if buffer_len != 0:
-            self.buffer_len = buffer_len
-        else:
-            self.buffer_len = 500
-
         # TODO this should probably not be hardcoded and be set when a message is recieved
         sss_data_len = 1000  # This is determined by the message
 
@@ -68,10 +62,6 @@ class SSSDetector(Node):
         self.current_step_offset = -1  # true initial index of the current window
         self.port_width = None
         self.stbd_width = None
-
-        self.output_window_name = "Sidescan returns"
-        self.output_initialized = False
-        self.output = None  # np.zeros((buffer_len, 2 * sss_data_len), dtype=np.ubyte)
 
         # Saved data
         self.data = []
@@ -88,6 +78,22 @@ class SSSDetector(Node):
         self.detected_buoys = None
         self.detected_ropes_port = None
         self.detected_ropes_star = None
+
+        # === Output parameters ===
+        # See overlay_detection_simple from sss_image_detector.py for a plotting example
+        # buffer is used for output
+        if buffer_len != 0:
+            self.buffer_len = buffer_len
+        else:
+            self.buffer_len = 500
+        self.output_window_name = "Sidescan returns"
+        self.output_width = 1000
+        self.output_initialized = False
+        self.output = None  # np.zeros((buffer_len, 2 * sss_data_len), dtype=np.ubyte)
+        self.circ_rad = 10
+        self.circ_thick = 2
+        self.rope_color = np.array([0, 255, 0], dtype=np.uint8)
+        self.buoy_color = np.array([0, 0, 255], dtype=np.uint8)
 
         # SSS data subscription
         self.create_subscription(msg_type=Sidescan,
@@ -114,10 +120,11 @@ class SSSDetector(Node):
             self.get_logger().info(f"Issue determining sss channel width")
 
         # Initialize Output
-        cv2.namedWindow(self.output_window_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(self.output_window_name, self.port_width + self.stbd_width, self.buffer_len)
+        cv.namedWindow(self.output_window_name, cv.WINDOW_NORMAL)
+        # cv.resizeWindow(self.output_window_name, self.port_width + self.stbd_width, self.buffer_len)
+        cv.resizeWindow(self.output_window_name, self.output_width, self.buffer_len)
 
-        self.output = np.zeros((self.buffer_len, self.port_width + self.stbd_width), dtype=np.ubyte)
+        self.output = np.zeros((self.buffer_len, self.port_width + self.stbd_width, 3), dtype=np.ubyte)
 
         self.output_initialized = True
 
@@ -152,8 +159,8 @@ class SSSDetector(Node):
         self.timestamps.append(measure_time_secs)
 
         # Update the output
-        self.output[1:, :] = self.output[:-1, :]  # shift data down
-        self.output[0, :] = meas
+        self.output[1:, :, :] = self.output[:-1, :, :]  # shift data down
+        self.output[0, :, :] = np.dstack((meas, meas, meas))
 
         # Update the detection window
         self.det_window[1:, :] = self.det_window[:-1, :]  # shift data down
@@ -178,7 +185,13 @@ class SSSDetector(Node):
                                                          save_output=False)
 
             # ===== Updates =====
-            # Buoy
+            # Updates the detected_buoys, detected_ropes_port, and detected_ropes_star
+            # Adds new detections to the output buffer
+            updated_buoys = None
+            updated_port = None
+            updated_star = None
+
+            # === Buoy ===
             if online_analysis.final_bouys is not None:
                 # apply offset
                 offset_online_buoys = online_analysis.final_bouys.copy()
@@ -187,10 +200,13 @@ class SSSDetector(Node):
                 if self.detected_buoys is None:
                     self.detected_buoys = offset_online_buoys
                 else:
-                    self.detected_buoys = concat_arrays_with_time_threshold(self.detected_buoys,
-                                                                            offset_online_buoys,
-                                                                            self.time_threshold)
+                    self.detected_buoys, updated_buoys = concat_arrays_with_time_threshold(self.detected_buoys,
+                                                                                           offset_online_buoys,
+                                                                                           self.time_threshold)
+                    if updated_buoys is not None:
+                        updated_buoys[:, 0] -= window_offset
 
+            # === Port ===
             if online_analysis.final_ropes_port is not None:
                 offset_ropes_port = online_analysis.final_ropes_port.copy()
                 # Format: [[data index, data time, range index]]
@@ -198,10 +214,14 @@ class SSSDetector(Node):
                 if self.detected_ropes_port is None:
                     self.detected_ropes_port = offset_ropes_port
                 else:
-                    self.detected_ropes_port = concat_arrays_with_time_threshold(self.detected_ropes_port,
-                                                                                 offset_ropes_port,
-                                                                                 self.time_threshold)
+                    self.detected_ropes_port, updated_port = concat_arrays_with_time_threshold(self.detected_ropes_port,
+                                                                                               offset_ropes_port,
+                                                                                               self.time_threshold)
+                    # have to remove offset of the updated elements for plotting
+                    if updated_port is not None:
+                        updated_port[:, 0] -= window_offset
 
+            # === Star ===
             if online_analysis.final_ropes_star is not None:
                 offset_ropes_star = online_analysis.final_ropes_star.copy()
                 # Format: [[data index, data time, range index]]
@@ -209,24 +229,32 @@ class SSSDetector(Node):
                 if self.detected_ropes_star is None:
                     self.detected_ropes_star = offset_ropes_star
                 else:
-                    self.detected_ropes_star = concat_arrays_with_time_threshold(self.detected_ropes_star,
-                                                                                 offset_ropes_star,
-                                                                                 self.time_threshold)
+                    self.detected_ropes_star, updated_star = concat_arrays_with_time_threshold(self.detected_ropes_star,
+                                                                                               offset_ropes_star,
+                                                                                               self.time_threshold)
+                    # have to remove offset of the updated elements for plotting
+                    if updated_star is not None:
+                        updated_star[:, 0] -= window_offset
+
+            self.overlay_detections_on_image(buoys=updated_buoys,
+                                             port=updated_port,
+                                             star=updated_star)
 
         # update time_out timer
         self.sss_last_time = self.get_clock().now()
 
+
         # Display sss data
-        resized = cv2.resize(self.output, (2 * 256, self.buffer_len), interpolation=cv2.INTER_AREA)
-        cv2.imshow(self.output_window_name, resized)
-        cv2.waitKey(1)
+        resized = cv.resize(self.output, (self.output_width, self.buffer_len), interpolation=cv.INTER_AREA)
+        cv.imshow(self.output_window_name, resized)
+        cv.waitKey(1)
 
     def time_out_callback(self):
         if len(self.data) > 0 and not self.data_written:
             elapsed_time = rcl_times_delta_secs(self.get_clock().now(), self.sss_last_time)
             if elapsed_time > self.time_out:
                 # debug
-                overlay_detections_simple(image=self.data,
+                overlay_detections_simple(image=np.array(self.data),
                                           buoys=self.detected_buoys,
                                           port=self.detected_ropes_port,
                                           star=self.detected_ropes_star)
@@ -256,8 +284,38 @@ class SSSDetector(Node):
                 # Output
                 print('SSS recording complete!')
                 print(f'Callback count : {self.sss_count} - Output length: {data_len} ')
-                cv2.destroyWindow(self.output_window_name)
+                cv.destroyWindow(self.output_window_name)
 
+    def overlay_detections_on_image(self,
+                                    buoys : np.ndarray|None = None,
+                                    port : np.ndarray|None = None,
+                                    star : np.ndarray|None = None) -> None:
+        """
+        Overlay detections on the output buffer image
+        :param buoys:
+        :param port:
+        :param star:
+        :return:
+        """
+        if buoys is not None:
+            buoys_indices = buoys[:, [0, 2]].astype(int)
+            for center in buoys_indices:
+                # Color is reversed because cv assumes bgr??
+                color = self.buoy_color[::-1]  # (color[0], color[1], color[2])
+                # Colors must be given as an iterable of python ints
+                color_list_int = [element.item() for element in color]
+                cv.circle(self.output, (center[1], center[0]),
+                          radius=self.circ_rad, color=color_list_int, thickness=self.circ_thick)
+
+        if port is not None:
+            port[:, 2] = (self.port_width - 1) - port[:, 2]
+            port = port[:, [0, 2]].astype(int)
+            self.output[port[:, 0], port[:, 1]] = self.rope_color
+
+        if star is not None:
+            star[:, 2] = self.port_width + star[:, 2]
+            star = star[:, [0, 2]].astype(int)
+            self.output[star[:, 0], star[:, 1]] = self.rope_color
 
 def main(arg=None):
     rclpy.init(args=arg)

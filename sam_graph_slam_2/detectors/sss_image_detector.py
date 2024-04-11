@@ -9,6 +9,7 @@ This script is intended to process the real data collected at the algae farm.
 # %% Imports
 import os
 import time
+from typing import Tuple, Optional
 
 import numpy as np
 import cv2 as cv
@@ -31,7 +32,7 @@ except ImportError:
 
 def concat_arrays_with_time_threshold(orig_array: np.ndarray,
                                       new_array: np.ndarray,
-                                      time_threshold: float):
+                                      time_threshold: float) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """
     Concatenate two arrays. Only elements that are greater than the time_threshold away from original elements are added.
     The time is assumed to be at index 1, concatenation occurs along the 0th axis
@@ -49,10 +50,11 @@ def concat_arrays_with_time_threshold(orig_array: np.ndarray,
 
     try:
         result_array = np.concatenate((orig_array, filtered_new_array), axis=concat_axis)
+        return result_array, filtered_new_array
     except ValueError:
         # I expect this to be the result of and empty new array
         result_array = orig_array
-    return result_array
+        return result_array, None
 
 
 def safe_vstack(array1, array2):
@@ -98,18 +100,18 @@ def overlay_detections_simple(image: np.ndarray,
         for center in buoys_indices:
             # Color is reversed because cv assumes bgr??
             color = buoy_color[::-1]  # (color[0], color[1], color[2])
-            color_tup = (255, 0, 0)
+            color_list_int = [element.item() for element in color]
             cv.circle(img_combined, (center[1], center[0]),
-                      radius=circ_rad, color=color_tup, thickness=circ_thick)
+                      radius=circ_rad, color=color_list_int, thickness=circ_thick)
 
     # Ropes
     # Port and star rope inds are purely range measurements
     # This required offsetting for correct plotting
     if port is not None:
         # (image.shape[1]//2 - 1)
-        port[:, 2] = 1000 - port[:, 2]
+        port[:, 2] = (image.shape[1]//2 - 1) - port[:, 2]
     if star is not None:
-        star[:, 2] = 1000 + star[:, 2]
+        star[:, 2] = image.shape[1]//2 + star[:, 2]
 
     # combine port ans starboard detections
     ropes_combined = safe_vstack(port, star)
