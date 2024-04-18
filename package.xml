@@ -3,7 +3,7 @@
 <package format="3">
   <name>sam_graph_slam_2</name>
   <version>0.0.0</version>
-  <description>Graph based localization from underconstrained measurements</description>
+  <description>Graph based localization from under constrained measurements in semi-structured environments</description>
   <maintainer email="jvaldez@kth.se">julian</maintainer>
   <license>MIT</license>
 

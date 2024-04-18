@@ -6,6 +6,10 @@ from geometry_msgs.msg import Point
 import tf2_ros
 import tf2_geometry_msgs
 
+"""
+Utility to publish markers of the given frame
+"""
+
 class FrameMarkerPublisher(Node):
     def __init__(self, frame_names):
         super().__init__('frame_marker_publisher')
@@ -28,15 +32,15 @@ class FrameMarkerPublisher(Node):
         for index, frame in enumerate(self.frame_names):
             try:
                 trans = self.tf_buffer.lookup_transform('map', frame, rclpy.time.Time())
-                self.get_logger().info(f'Success! transformed {frame} to map')
+                # self.get_logger().info(f'Success! transformed {frame} to map')
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                 self.get_logger().info(f'Could not transform {frame} to map')
                 continue
 
             marker = Marker()
             marker.header.frame_id = 'map'
-            marker.type = marker.SPHERE
-            marker.action = marker.ADD
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
             marker.scale.x = 0.2
             marker.scale.y = 0.2
             marker.scale.z = 0.2

@@ -141,7 +141,7 @@ class process_sss:
                  sss_times: np.ndarray,
                  output_path: str,
                  start_ind: int | None = None, end_ind: int | None = None, max_range_ind: int | None = None,
-                 cpd_max_depth=None, cpd_ratio=None, flipping_regions=None, flip_original=False):
+                 cpd_max_depth=None, cpd_ratio=None, flipping_regions=None, flip_original=False, verbose=False):
 
         """
         Currently processing is divided into pre- and post-processing. This division is kind of arbitrary.
@@ -166,7 +166,8 @@ class process_sss:
         if os.path.isdir(output_path):
             self.output_path = output_path
         else:
-            print("Invalid output path")
+            if verbose:
+                print("Invalid output path")
             self.output_path = ""
 
         # Data manipulations and manual detections
@@ -392,7 +393,7 @@ class process_sss:
 
         return img_filtered
 
-    def filter_median(self, kernel_size=5, show=False):
+    def filter_median(self, kernel_size=5, show=False, save=False):
         if kernel_size not in [3, 5, 7, 9]:
             return
 
@@ -419,12 +420,15 @@ class process_sss:
             ax2.imshow(img_filtered)
             med_fig.show()
 
-        # Record the operation and save the output
+        # Record the operation
         self.operations_list.append(f'm_{kernel_size}')
-        output_file_path = os.path.join(self.output_path, f'{self.data_label}_med.png')
-        cv.imwrite(output_file_path, img_filtered)
 
-    def filter_gaussian(self, kernel_size=5, show=False):
+        # Save output
+        if save:
+            output_file_path = os.path.join(self.output_path, f'{self.data_label}_med.png')
+            cv.imwrite(output_file_path, img_filtered)
+
+    def filter_gaussian(self, kernel_size=5, show=False, save=False):
         if kernel_size not in [3, 5, 7, 9]:
             return
 
@@ -451,10 +455,12 @@ class process_sss:
 
         # Record the operation and save the output
         self.operations_list.append(f'gauss_{kernel_size}')
-        output_file_path = os.path.join(self.output_path, f'{self.data_label}_gauss.png')
-        cv.imwrite(output_file_path, img_filtered)
 
-    def gradient_cross_track(self, kernel_size=5, show=False):
+        if save:
+            output_file_path = os.path.join(self.output_path, f'{self.data_label}_gauss.png')
+            cv.imwrite(output_file_path, img_filtered)
+
+    def gradient_cross_track(self, kernel_size=5, show=False, save=False):
 
         # Before filter image
         img_before = np.hstack((np.fliplr(self.img_port), self.img_starboard))
@@ -481,19 +487,22 @@ class process_sss:
 
         # Record the operation and save the output
         self.operations_list.append(f'grad_{kernel_size}')
-        output_file_path = os.path.join(self.output_path, f'{self.data_label}_grad.png')
-        cv.imwrite(output_file_path, complete_img)
+
+        if save:
+            output_file_path = os.path.join(self.output_path, f'{self.data_label}_grad.png')
+            cv.imwrite(output_file_path, complete_img)
 
         return complete_img
 
-    def down_range_gradient(self, m_size=5, g_size=5, s_size=5, show=True):
+    def down_range_gradient(self, m_size=5, g_size=5, s_size=5, show=True, save=False):
         """
         Performs a down range gradient for both channels. Allows for some amount of pre-filtering.
 
-        :param show:
         :param s_size: size of sobel kernel, [3, 5, 7, 9]
         :param g_size: size of gaussian filter, [3, 5, 7, 9]
         :param m_size: size of median filter, [3, 5, 7, 9]
+        :param save:
+        :param show:
         :return:
         """
 
@@ -531,9 +540,6 @@ class process_sss:
             # dy = cv.Sobel(self.img, cv.CV_16S, 0, 1, ksize=s_size)
             dy = np.zeros_like(dx)
 
-            output_file_path = os.path.join(self.output_path, 'down_range_gradient.png')
-            cv.imwrite(output_file_path, dx)
-
             if show:
                 custom_canny_fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
                 custom_canny_fig.suptitle(f'Down Range Gradient - m_size: {m_size}  g_size: {g_size}, s_size: {s_size}')
@@ -551,18 +557,23 @@ class process_sss:
                 plt.gcf().set_dpi(300)
                 plt.show()
 
+            if save:
+                output_file_path = os.path.join(self.output_path, 'down_range_gradient.png')
+                cv.imwrite(output_file_path, dx)
+
             return dx, dx_neg
 
-    def canny_custom(self, m_size=5, g_size=5, s_size=5, l_threshold=100, h_threshold=200, show=True):
+    def canny_custom(self, m_size=5, g_size=5, s_size=5, l_threshold=100, h_threshold=200, show=True, save=False):
         """
         The
 
-        :param show:
         :param s_size: size of sobel kernel, [3, 5, 7, 9]
         :param g_size: size of gaussian filter, [3, 5, 7, 9]
         :param m_size: size of median filter, [3, 5, 7, 9]
         :param l_threshold: lower canny threshold
         :param h_threshold: upper canny threshold
+        :param show:
+        :param save:
         :return:
         """
 
@@ -601,8 +612,6 @@ class process_sss:
             dy = np.zeros_like(dx)
             # Ignore "Unexpected argument"
             custom_canny = cv.Canny(dx=dx, dy=dy, threshold1=l_threshold, threshold2=h_threshold, L2gradient=True)
-            output_file_path = os.path.join(self.output_path, 'canny_custom.png')
-            cv.imwrite(output_file_path, custom_canny)
 
             if show:
                 custom_canny_fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4)
@@ -626,9 +635,13 @@ class process_sss:
                 plt.gcf().set_dpi(300)
                 plt.show()
 
+            if save:
+                output_file_path = os.path.join(self.output_path, 'canny_custom.png')
+                cv.imwrite(output_file_path, custom_canny)
+
             return custom_canny, dx, dx_neg
 
-    def canny_standard(self, m_size=5, l_threshold=100, h_threshold=200, show=True):
+    def canny_standard(self, m_size=5, l_threshold=100, h_threshold=200, show=True, save=False):
         """
         The
 
@@ -645,8 +658,6 @@ class process_sss:
             self.filter_median(m_size)
 
         standard_canny = cv.Canny(self.img, threshold1=l_threshold, threshold2=h_threshold, L2gradient=True)
-        output_file_path = os.path.join(self.output_path, f'canny_standard.png')
-        cv.imwrite(output_file_path, standard_canny)
 
         if show:
             standard_canny_fig, (ax1, ax2) = plt.subplots(1, 2)
@@ -661,6 +672,10 @@ class process_sss:
             ax2.imshow(img_color)
             plt.gcf().set_dpi(300)
             plt.show()
+
+        if save:
+            output_file_path = os.path.join(self.output_path, f'canny_standard.png')
+            cv.imwrite(output_file_path, standard_canny)
 
         return standard_canny
 
@@ -1611,7 +1626,7 @@ class process_sss:
             plt.gcf().set_dpi(300)
             plt.show()
 
-    def post_final_buoys(self, plot=False):
+    def post_final_buoys(self, plot=False, save=False):
         # The input is stored as [ orig index | truncated cross index ]
         # The output is stored as [ orig index | seq ID | orig cross index ]
 
@@ -1647,9 +1662,6 @@ class process_sss:
 
         self.final_bouys[:, 1] = relevant_time_ids
 
-        output_file_path = os.path.join(self.output_path, 'image_process_buoys.csv')
-        np.savetxt(output_file_path, self.final_bouys, delimiter=",")
-        print("Buoy detections saved")
 
         if plot:
             img_color = np.dstack((self.img_original, self.img_original, self.img_original))
@@ -1668,7 +1680,12 @@ class process_sss:
             plt.gcf().set_dpi(300)
             plt.show()
 
-    def post_final_ropes(self, plot=False):
+        if save:
+            output_file_path = os.path.join(self.output_path, 'image_process_buoys.csv')
+            np.savetxt(output_file_path, self.final_bouys, delimiter=",")
+            print("Buoy detections saved")
+
+    def post_final_ropes(self, plot=False, save=False):
         # The output is stored as [ orig index | seq ID | range index ]
 
         # Port
@@ -1684,8 +1701,9 @@ class process_sss:
             self.final_ropes_port[:, 1] = port_seq_ids[:]
             self.final_ropes_port[:, 2] = port_valid[:]
 
-            output_file_path = os.path.join(self.output_path, 'image_process_ropes_port.csv')
-            np.savetxt(output_file_path, self.final_ropes_port, delimiter=",")
+            if save:
+                output_file_path = os.path.join(self.output_path, 'image_process_ropes_port.csv')
+                np.savetxt(output_file_path, self.final_ropes_port, delimiter=",")
 
         # Star
         star_valid_inds = np.nonzero(self.post_rope_inds_star[:])[0]
@@ -1700,12 +1718,12 @@ class process_sss:
             self.final_ropes_star[:, 1] = star_seq_ids[:]
             self.final_ropes_star[:, 2] = star_valid[:]
 
-            output_file_path = os.path.join(self.output_path, 'image_process_ropes_star.csv')
-            np.savetxt(output_file_path, self.final_ropes_star, delimiter=",")
+            if save:
+                output_file_path = os.path.join(self.output_path, 'image_process_ropes_star.csv')
+                np.savetxt(output_file_path, self.final_ropes_star, delimiter=",")
+                print("Rope detections saved")
 
-        print("Rope detections saved")
-
-    def perform_algae_farm_detection(self, show_output=False, save_output=False):
+    def perform_algae_farm_detection(self, show_output=False, save_output=False, verbose=False):
         """
         This function will be performed on by the online detector
         :return:
@@ -1791,7 +1809,8 @@ class process_sss:
                                                                    canny_gauss_size,
                                                                    canny_sobel_size,
                                                                    canny_l_thresh, canny_h_thresh,
-                                                                   show=show_custom_canny and show_output)
+                                                                   show=show_custom_canny and show_output,
+                                                                   save=save_output)
 
         # ===== Template for the buoy =====
         buoy_dx, rope_dx_neg = self.down_range_gradient(m_size=buoy_med_size,
@@ -1895,8 +1914,8 @@ class process_sss:
 
         # self.post_find_buoy_offsets(window_size=55, plot=True)
 
-        self.post_final_buoys(plot=False)
-        self.post_final_ropes(plot=False)
+        self.post_final_buoys(plot=False, save=save_output)
+        self.post_final_ropes(plot=False, save=save_output)
 
         post_end_time = time.time()
 
@@ -1915,11 +1934,12 @@ class process_sss:
             post_time = 0
             complete_time = pre_time
 
-        size = self.end_ind - self.start_ind - 1
-        print(f"Processed count : {size}")
-        print(f"Pre-processing time: {pre_time}")
-        print(f"Post-processing time: {post_time}")
-        print(f"Complete time: {complete_time}")
+        if verbose:
+            size = self.end_ind - self.start_ind - 1
+            print(f"Processed count : {size}")
+            print(f"Pre-processing time: {pre_time}")
+            print(f"Post-processing time: {post_time}")
+            print(f"Complete time: {complete_time}")
 
 
 if __name__ == "__main__":

@@ -50,3 +50,17 @@ def rcl_time_to_stamp(time: rcl_Time) -> Stamp:
     stamp.sec = int(time.nanoseconds // 1e9)
     stamp.nanosec = int(time.nanoseconds % 1e9)
     return stamp
+
+
+def float_time_to_stamp(float_time: float) -> Stamp:
+    """
+    Converts time given as float to stamp
+    :param time:
+    :return:
+    """
+    stamp = Stamp()
+    secs = int(float_time)
+    nsecs = int((float_time - secs) * 1e9)
+    stamp.sec = secs
+    stamp.nanosec = nsecs
+    return stamp

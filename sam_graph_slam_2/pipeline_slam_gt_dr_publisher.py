@@ -16,6 +16,11 @@ from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
 
+# Topics/Frames
+from sam_msgs.msg import Topics as SamTopics
+from sam_graph_slam_2_msgs.msg import Topics as GraphSlamTopics
+from sam_msgs.msg import Links as SamLinks
+
 try:
     # ROS2 IMPORTS
     from .helpers.gtsam_ros_helpers import ros_pose_to_gtsam_pose3_and_stamp, gtsam_pose3_to_ros_pose3
@@ -44,15 +49,11 @@ class PipelineSimDrGtPublisher(Node):
         # ===== Declare parameters =====
         self.declare_node_parameters()
 
-        # ===== Topics =====
-        self.gt_topic = self.get_parameter("gt_topic").value
-        self.imu_topic = self.get_parameter("imu_topic").value
-        self.pub_dr_topic = self.get_parameter("pub_dr_topic").value
-        self.pub_gt_topic = self.get_parameter("pub_gt_topic").value
+        self.robot_name = self.get_parameter("robot_name").value
 
         # ===== Frame and tf stuff =====
         self.map_frame = self.get_parameter("map_frame").value  # 'map'
-        self.robot_frame = self.get_parameter("robot_frame").value  # base link of robot
+        self.robot_frame = f"{self.robot_name}_{SamLinks.BASE_LINK}"
         self.dr_tf_frame = self.get_parameter("dr_tf_frame").value  # For saving detector dr poses with pointcloud data
 
         # Set up TF broadcaster
@@ -72,15 +73,15 @@ class PipelineSimDrGtPublisher(Node):
         self.dr_frame = None  # parent frame of the dr odometry
 
         # Subscribe to simulated IMU topic
-        # self.imu_subscriber = rospy.Subscriber(self.imu_topic, Imu, self.imu_callback)  #ROS1
-        self.imu_subscriber = self.create_subscription(msg_type=Imu, topic=self.imu_topic, callback=self.imu_callback,
-                                                       qos_profile=10)
+        self.imu_subscriber = self.create_subscription(msg_type=Imu, topic=SamTopics.STIM_IMU_TOPIC,
+                                                       callback=self.imu_callback, qos_profile=10)
 
         # Publishers
-        # self.dr_publisher = rospy.Publisher(self.pub_dr_topic, Odometry, queue_size=10)  # ROS1
-        # self.gt_publisher = rospy.Publisher(self.pub_gt_topic, Odometry, queue_size=10)  # ROS1
-        self.dr_publisher = self.create_publisher(msg_type=Odometry, topic=self.pub_dr_topic, qos_profile=10)
-        self.gt_publisher = self.create_publisher(msg_type=Odometry, topic=self.pub_gt_topic, qos_profile=10)
+        self.dr_publisher = self.create_publisher(msg_type=Odometry, topic=GraphSlamTopics.DR_ODOM_TOPIC,
+                                                  qos_profile=10)
+
+        self.gt_publisher = self.create_publisher(msg_type=Odometry, topic=GraphSlamTopics.GT_ODOM_TOPIC,
+                                                  qos_profile=10)
 
         # DR noise parameters
         self.add_noise = self.get_parameter("add_noise").value
@@ -105,11 +106,8 @@ class PipelineSimDrGtPublisher(Node):
         :return:
         """
 
-        # Topics
-        self.declare_parameter("gt_topic", "/sam/sim/odom")
-        self.declare_parameter("imu_topic", "/sam0/core/imu")
-        self.declare_parameter("pub_dr_topic", "/dr_odom")
-        self.declare_parameter("pub_gt_topic", "/gt_odom")
+        default_ropbpt_name = "sam0"
+        self.declare_parameter("robot_name", default_ropbpt_name)
 
         # ===== Frame and tf stuff =====
         self.declare_parameter("map_frame", "odom")  # 'map'
@@ -210,6 +208,7 @@ class PipelineSimDrGtPublisher(Node):
         if self.bound_depth:
             # Determine depth values
             depth_noise = np.random.normal(0, self.depth_sigma)
+            # TODO clip so that depths above the water are not reported
             bounded_noisy_depth = init_pose3.z() + depth_noise
 
             # Update the depth, z, value

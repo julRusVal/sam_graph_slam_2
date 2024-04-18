@@ -105,7 +105,7 @@ class PipelineMapPublisher(Node):
             self.lines = pipeline_lines
 
         if pipeline_colors is None:
-            # Parameter stored as a string corresponding to list[list[float,float],float]
+            # Parameter stored as a string corresponding to list[list[float,float,float]
             self.colors = ast.literal_eval(self.get_parameter("pipeline_colors").value)
         else:
             self.colors = pipeline_colors
@@ -363,8 +363,6 @@ def main(args=None):
         rclpy.spin(pipeline_map_publisher)
     except KeyboardInterrupt:
         pass
-        # pipeline_map_publisher.destroy_node()
-        # rclpy.shutdown()
 
 
 if __name__ == "__main__":
