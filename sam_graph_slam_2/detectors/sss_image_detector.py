@@ -109,9 +109,9 @@ def overlay_detections_simple(image: np.ndarray,
     # This required offsetting for correct plotting
     if port is not None:
         # (image.shape[1]//2 - 1)
-        port[:, 2] = (image.shape[1]//2 - 1) - port[:, 2]
+        port[:, 2] = (image.shape[1] // 2 - 1) - port[:, 2]
     if star is not None:
-        star[:, 2] = image.shape[1]//2 + star[:, 2]
+        star[:, 2] = image.shape[1] // 2 + star[:, 2]
 
     # combine port ans starboard detections
     ropes_combined = safe_vstack(port, star)
@@ -133,7 +133,6 @@ def overlay_detections_simple(image: np.ndarray,
     ax2.imshow(img_combined)
     plt.gcf().set_dpi(300)
     plt.show()
-
 
 
 class process_sss:
@@ -259,8 +258,6 @@ class process_sss:
 
         # List of operations
         self.operations_list = []
-
-        # Manual
 
     def set_working_to_original(self):
         # Extract area of interest
@@ -518,8 +515,13 @@ class process_sss:
             dx_port = cv.Sobel(self.img_port, cv.CV_16S, 1, 0, ksize=s_size)
             dx_star = cv.Sobel(self.img_starboard, cv.CV_16S, 1, 0, ksize=s_size)
 
-            # gradients along each ping
-            # Negative gradient is used for visualizing
+            # - Gradients along each ping -
+            # Combined gradient
+            # Used for visualizing
+            dx = np.hstack((np.fliplr(dx_port), dx_star)).astype(np.int16)
+
+            # Negative gradient
+            # Used for visualizing
             dx_port_neg = np.copy(dx_port)
             dx_star_neg = np.copy(dx_star)
 
@@ -531,11 +533,15 @@ class process_sss:
 
             dx_neg = np.hstack((np.fliplr(dx_port_neg), dx_star_neg)).astype(np.int16)
 
-            # Only the positive gradient is used for edge detection
-            dx_port[dx_port < 0] = 0
-            dx_star[dx_star < 0] = 0
+            # Positive gradient
+            # Used for edge detection
+            dx_port_pos = np.copy(dx_port)
+            dx_star_pos = np.copy(dx_star)
 
-            dx = np.hstack((np.fliplr(dx_port), dx_star)).astype(np.int16)
+            dx_port_pos[dx_port_pos < 0] = 0
+            dx_star_pos[dx_star_pos < 0] = 0
+
+            dx_pos = np.hstack((np.fliplr(dx_port), dx_star)).astype(np.int16)
 
             # dy = cv.Sobel(self.img, cv.CV_16S, 0, 1, ksize=s_size)
             dy = np.zeros_like(dx)
@@ -548,7 +554,7 @@ class process_sss:
                 ax1.imshow(self.img)
 
                 ax2.title.set_text('Positive dx')
-                ax2.imshow(dx)
+                ax2.imshow(dx_pos)
 
                 ax3.title.set_text('Negative dx')
                 ax3.imshow(dx_neg)
@@ -561,7 +567,7 @@ class process_sss:
                 output_file_path = os.path.join(self.output_path, 'down_range_gradient.png')
                 cv.imwrite(output_file_path, dx)
 
-            return dx, dx_neg
+            return dx_pos, dx_neg
 
     def canny_custom(self, m_size=5, g_size=5, s_size=5, l_threshold=100, h_threshold=200, show=True, save=False):
         """
@@ -1662,7 +1668,6 @@ class process_sss:
 
         self.final_bouys[:, 1] = relevant_time_ids
 
-
         if plot:
             img_color = np.dstack((self.img_original, self.img_original, self.img_original))
 
@@ -1818,6 +1823,8 @@ class process_sss:
                                                         s_size=buoy_sobel_size,
                                                         show=show_buoy_grad and show_output)
         matching_image = np.copy(buoy_dx).astype(np.float32)
+
+        # Construct buoy detection template
         if template_size % 2 == 0:
             template_size += 1
         template = self.construct_template_kernel(template_size, template_sigma, template_feature_width)

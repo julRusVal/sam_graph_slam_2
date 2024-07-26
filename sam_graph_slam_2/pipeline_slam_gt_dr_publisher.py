@@ -208,8 +208,10 @@ class PipelineSimDrGtPublisher(Node):
         if self.bound_depth:
             # Determine depth values
             depth_noise = np.random.normal(0, self.depth_sigma)
-            # TODO clip so that depths above the water are not reported
             bounded_noisy_depth = init_pose3.z() + depth_noise
+            # TODO clip so that depths above the water are not reported
+            # Clip
+            bounded_noisy_depth = min(0, bounded_noisy_depth)
 
             # Update the depth, z, value
             new_translation = new_dr_pose.translation()

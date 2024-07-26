@@ -59,7 +59,9 @@ class SSSDetector(Node):
 
         # SAM sensor topics
         self.sss_topic = SamTopics.SIDESCAN_TOPIC  # f"/{self.robot_name}/payload/sidescan"
-        self.depth_topic = DRTopics.DR_DEPTH_TOPIC  # f"/{self.robot_name}/dr/depth"  # press_to_depth
+        # Note: this node subscribes to the depth that is output by the press_to_depth.py node
+        # This depth is of the type PseWithCovarianceStamped
+        self.depth_topic = DRTopics.DR_DEPTH_POSE_TOPIC
 
         # Map info topic
         self.line_depth_topic = GraphSlamTopics.MAP_LINE_DEPTH_TOPIC
@@ -97,9 +99,21 @@ class SSSDetector(Node):
         # All of these should be the same length
 
         # === Detector parameters ===
-        self.det_window_size = 25  # number off sss returns to perform detection on
-        self.det_step_size = 10  # number of sss returns to wait between processing windows
-        self.max_range_ing = 175  # Detector parameter: determine max range of targets to consider for detection
+        # Detection window: # of sss returns to perform detection on
+        self.min_det_window_size = 25  # Do Not Change Without Testing, Reducing could break the detector
+        self.det_window_size = self.get_parameter("det_window_size").value
+        # Enforce min detection window size
+        self.det_window_size = min(self.min_det_window_size, self.det_window_size)
+
+        # Detection step size: number of sss returns to wait between processing windows
+        self.min_det_step_size = 1
+        self.det_step_size = self.get_parameter("det_step_size").value
+        # Enforce min value
+        self.det_step_size = max(self.min_det_step_size, self.det_step_size)
+
+        # Max detection range: determine max range of targets to consider for detection
+        # Given in units of bins, not spatial ranges
+        self.max_range_ind = self.get_parameter("max_range_ind").value
         self.time_threshold = 0.01  # Detections within threshold of existing detections will not be added
         self.det_window = None  # (det_window_size x sss width) array of sss returns
         self.det_times = None  # (det_wind_size,) array of times, corresponding to the sss returns, float seconds
@@ -118,6 +132,12 @@ class SSSDetector(Node):
         self.valid_depth = False
         self.buoy_depth = 0
         self.water_depth = 1000  #
+
+        # === Detection publishing parameters ===
+        # Limit the number of detections published per msg by type
+        # This limit is applied separately to each channel of the line detector
+        self.max_point_detections_per_msg = self.get_parameter("max_point_detections_per_msg").value
+        self.max_line_detections_per_msg = self.get_parameter("max_line_detections_per_msg").value
 
         # === Output parameters ===
         # See overlay_detection_simple from sss_image_detector.py for a plotting example
@@ -148,6 +168,9 @@ class SSSDetector(Node):
         self.buoy_color_float = np.array([0., 0., 1.])  # Use for markers
         self.marker_alpha = 0.5
 
+        # Verboseness
+        self.verbose_detector_node = self.get_parameter("verbose_detector_node").value
+        self.show_detections_external = self.get_parameter("show_detections_external").value
 
         # === Subscriptions ===
         # SSS
@@ -191,6 +214,18 @@ class SSSDetector(Node):
         self.declare_parameter("robot_name", default_robot_name)
         self.declare_parameter("sss_resolution", 0.05)
         self.declare_parameter("write_data", False)
+
+        self.declare_parameter("det_window_size", 25)
+        self.declare_parameter("det_step_size", 10)
+        self.declare_parameter("max_range_ind", 175)
+
+        # Limit the number of detections published per msg by type
+        # This limit is applied separately to each channel of the line detector
+        self.declare_parameter("max_point_detections_per_msg", 1)
+        self.declare_parameter("max_line_detections_per_msg", 1)
+
+        self.declare_parameter("verbose_detector_node", False)
+        self.declare_parameter("show_detections_external", False)  # controls if a cv window is used
         pass
 
     def init_output(self):
@@ -201,18 +236,21 @@ class SSSDetector(Node):
         if None in [self.port_width, self.stbd_width]:
             self.get_logger().info(f"Issue determining sss channel width")
 
-        # Initialize Output
-        cv.namedWindow(self.output_window_name, cv.WINDOW_NORMAL)
-        cv.resizeWindow(self.output_window_name, self.output_width, self.buffer_len)
+        # Initialize external output
+        if self.show_detections_external:
+            cv.namedWindow(self.output_window_name, cv.WINDOW_NORMAL)
+            cv.resizeWindow(self.output_window_name, self.output_width, self.buffer_len)
 
+        # Initialize output array
         self.output = np.zeros((self.buffer_len, self.port_width + self.stbd_width, 3), dtype=np.ubyte)
 
         self.output_initialized = True
 
     def line_depth_callback(self, msg):
-        self.line_depth = msg.data
-        self.valid_depth = True
-        self.get_logger().info("Line depth set")
+        if not self.valid_depth:
+            self.line_depth = msg.data
+            self.valid_depth = True
+            self.get_logger().info("Line depth set")
 
     def sss_callback(self, msg):
         """
@@ -272,7 +310,7 @@ class SSSDetector(Node):
                                           sss_times=self.det_times,
                                           output_path="",
                                           start_ind=0, end_ind=0,
-                                          max_range_ind=self.max_range_ing)
+                                          max_range_ind=self.max_range_ind)
 
             online_analysis.perform_algae_farm_detection(show_output=False,
                                                          save_output=False)
@@ -347,18 +385,22 @@ class SSSDetector(Node):
                                                                       detection_depths=self.det_depths)
 
             if len(detection_array_msg.detections) > 0:
-                self.get_logger().info(f"Publishing {len(detection_array_msg.detections)} detections")
-                self._publish_sidescan_and_detection_images()
+                if self.verbose_detector_node:
+                    self.get_logger().info(f"Publishing {len(detection_array_msg.detections)} detections")
                 self._publish_detection_marker(detection_array_msg)
                 self.detection_pub.publish(detection_array_msg)
+
+        # Publish the output image every time there is a new sss msg
+        self._publish_sidescan_and_detection_images()
 
         # update time_out timer
         self.sss_last_time = self.get_clock().now()
 
         # Display sss data
-        resized = cv.resize(self.output, (self.output_width, self.buffer_len), interpolation=cv.INTER_AREA)
-        cv.imshow(self.output_window_name, resized)
-        cv.waitKey(1)
+        if self.show_detections_external:
+            resized = cv.resize(self.output, (self.output_width, self.buffer_len), interpolation=cv.INTER_AREA)
+            cv.imshow(self.output_window_name, resized)
+            cv.waitKey(1)
 
     def depth_cb(self, msg):
         """
@@ -404,12 +446,14 @@ class SSSDetector(Node):
                 # Output
                 print('SSS recording complete!')
                 print(f'Callback count : {self.sss_count} - Output length: {data_len} ')
-                cv.destroyWindow(self.output_window_name)
+                if self.show_detections_external:
+                    cv.destroyWindow(self.output_window_name)
 
             elif elapsed_time > self.time_out and not self.write_data:
                 self.data_written = True
                 print('sss Detector timeout')
-                cv.destroyWindow(self.output_window_name)
+                if self.show_detections_external:
+                    cv.destroyWindow(self.output_window_name)
 
     def _overlay_detections_on_image(self,
                                      buoys: np.ndarray | None = None,
@@ -466,13 +510,23 @@ class SSSDetector(Node):
         combined_detection = [buoy_detections, port_detections, star_detections]
         combined_types = [ObjectID.BUOY.name, ObjectID.ROPE.name, ObjectID.ROPE.name]
         combined_channels = ['buoy', Side.PORT.name, Side.STARBOARD.name]
+        combined_max_detects = [self.max_point_detections_per_msg,
+                                self.max_line_detections_per_msg, self.max_line_detections_per_msg]
 
         # Add buoys to the detection array
         # Remember that port and starboard buoys are combined
-        for detections, detection_type, channel in zip(combined_detection, combined_types, combined_channels):
+        for detections, detection_type, channel, max_msgs in zip(combined_detection,
+                                                                 combined_types,
+                                                                 combined_channels,
+                                                                 combined_max_detects):
             if detections is None:
                 continue
-            for detection in detections:
+
+            for detection_ind, detection in enumerate(detections):
+                # Limit the number of detection a by type per msg
+                if detection_ind >= max_msgs:
+                    break
+
                 detection_window_index = int(detection[0])
                 detection_time = detection[1]
 
@@ -613,7 +667,8 @@ class SSSDetector(Node):
                 detection_marker_array.markers.append(marker)
                 detection_count += 1
 
-            print('Publishing detection markers')
+            if self.verbose_detector_node:
+                self.get_logger().info("Publishing detection markers")
             self.marker_pub.publish(detection_marker_array)
 
     def _publish_sidescan_and_detection_images(self):
@@ -623,7 +678,7 @@ class SSSDetector(Node):
             #     self.bridge.cv2_to_imgmsg(self.sidescan_image, "passthrough"))
             # Publish marked sss
             self.marked_sss_pub.publish(
-                self.bridge.cv2_to_imgmsg(self.output, "passthrough"))
+                self.bridge.cv2_to_imgmsg(self.output, "bgr8"))
         except CvBridgeError as error:
             print('Error converting numpy array to img msg: {}'.format(error))
 

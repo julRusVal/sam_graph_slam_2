@@ -15,7 +15,7 @@ def generate_launch_description():
     rviz_config = os.path.join(
         get_package_share_directory('sam_graph_slam_2'),
         'rviz',
-        'rviz2_pipeline.rviz'
+        'rviz2_algae.rviz'
     )
 
     robot_name = "sam0"
@@ -26,6 +26,12 @@ def generate_launch_description():
 
     return launch.LaunchDescription([
 
+        Node(
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            arguments=['-d', rviz_config]
+        ),
         # Replace with the real DR once ported
         # NOTE: node renamed
         Node(
@@ -62,6 +68,14 @@ def generate_launch_description():
             namespace=robot_name,
             name="algae_sss_detector",
             output="screen",
+            parameters=[param_config]
+        ),
+        Node(
+            package='sam_graph_slam_2',
+            executable='sam_slam_node',
+            namespace=robot_name,
+            name='sam_slam_node',
+            output='screen',
             parameters=[param_config]
         )
 

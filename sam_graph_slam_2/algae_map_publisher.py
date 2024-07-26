@@ -158,7 +158,8 @@ class AlgaeMapPublisher(Node):
         self.buoy_color = [0.0, 1.0, 1.0]
 
         # Verboseness options
-        self.verbose_map_publish = True  # self.get_parameter("verbose_map_publish").value
+        self.verbose_map_publisher = self.get_parameter("verbose_map_publisher").value
+        self.get_logger().info(f"verbose_map_publisher: {self.verbose_map_publisher}")
 
         # ===== Construct =====
         # Determine buoy positions from the frame names -> make corresponding markers
@@ -241,6 +242,8 @@ class AlgaeMapPublisher(Node):
         self.declare_parameter('buoy_frames', default_buoy_frames)
         self.declare_parameter("rope_frames", default_rope_frames)
         self.declare_parameter("line_ends", default_line_ends)
+
+        self.declare_parameter("verbose_map_publisher", False)
 
     def find_rope_depth(self):
         """
@@ -397,7 +400,7 @@ class AlgaeMapPublisher(Node):
                 rope_line_marker.points = [point_start, point_end]
                 rope_line_marker.pose.orientation.w = 1.0
 
-                print(f"Outer: {marker_id} ({line_ind})")
+                # print(f"Outer: {marker_id} ({line_ind})")
                 self.rope_lines.markers.append(rope_line_marker)
 
                 # Rope as a line of buoys
@@ -457,15 +460,15 @@ class AlgaeMapPublisher(Node):
 
                     # Append the marker to the MarkerArray
                     self.rope_inner_markers.markers.append(marker)
-                    print(
-                        f"Inner: {int(self.n_buoys_per_rope + 1) * line_ind + buoy_ind + 1} ({line_ind}) ({buoy_ind})")
+                    # print(f"Inner: {int(self.n_buoys_per_rope + 1) * line_ind + buoy_ind + 1}"
+                    #       f"({line_ind}) ({buoy_ind})")
                     self.get_logger().info(f'|MAP_MARKER| Rope {line_ind} - {buoy_ind} added')
 
         self.valid_markers = True
 
     def publish_markers(self):
         if self.valid_markers and self.valid_depth:
-            if self.verbose_map_publish:
+            if self.verbose_map_publisher:
                 self.get_logger().info(f"Map published")
 
             # Publish only if
@@ -485,16 +488,16 @@ class AlgaeMapPublisher(Node):
                 self.rope_lines_pub.publish(self.rope_lines)
 
         elif not self.valid_markers:
-            if self.verbose_map_publish:
+            if self.verbose_map_publisher:
                 self.get_logger().info(f"Invalid markers")
-                self.construct_buoy_markers()  # this will try to find positions and depths
-                # if None in [self.buoy_markers, self.rope_inner_markers]:  # old
-                #     self.construct_buoy_markers()  # old
+            self.construct_buoy_markers()  # this will try to find positions and depths
+            # if None in [self.buoy_markers, self.rope_inner_markers]:  # old
+            #     self.construct_buoy_markers()  # old
 
         elif not self.valid_depth:
-            if self.verbose_map_publish:
+            if self.verbose_map_publisher:
                 self.get_logger().info(f"Invalid depths")
-                self.find_rope_depth()
+            self.find_rope_depth()
 
         else:
             self.get_logger().info("Is there a problem with the map publisher?")

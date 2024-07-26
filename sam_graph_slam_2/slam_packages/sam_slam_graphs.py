@@ -1,7 +1,24 @@
 #!/usr/bin/env python3
 
 """
-Script for processing data from SMaRC's Stonefish simulation
+Online graph based slam
+
+Map:
+Map is defined by point and line features
+- Point features (buoys): are sent published as a MarkerArray and the coordinates are extracted from the individual
+markers
+
+- Line features (ropes and pipes): can be provided when this class is initialized, or passed to the rope_setup method
+    - Initialization: list[list[start_index,end_index]]
+    - Rope_setup: list[list[list[start_x, start_y], list[end_x, end_y]]]
+
+Constraints:
+Constraints as supplied from the odometer data and sidescan sonar returns. The Detections are provided by a
+separate node.
+
+Visual Mosaicing:
+The aside from providing an online estimate this class is also intended to save relevant data for offline processing
+in 3D geo-referenced mosaics
 """
 
 # %% Imports
@@ -374,7 +391,7 @@ class online_slam_2d:
         self.est_path_pub = self.node.create_publisher(msg_type=Path, topic=self.est_path_topic, qos_profile=10)
         # Rope detections
         self.est_rope_pub = self.node.create_publisher(msg_type=MarkerArray, topic=self.est_rope_topic, qos_profile=10)
-        self.rope_marker_scale = float(10)
+        self.rope_marker_scale = float(0.25)
         self.rope_marker_color = ColorRGBA(r=0.5, g=0.5, b=0.5, a=0.75)
         # Buoy detections
         self.est_buoy_pub = self.node.create_publisher(msg_type=MarkerArray, topic=self.est_buoy_topic, qos_profile=10)
@@ -480,7 +497,8 @@ class online_slam_2d:
         :param buoys: list of buoy coords in the map frame
         :return:
         """
-        print("Buoys being added to online graph")
+        self.node.get_logger().info("Buoys being added to online graph")
+
         if len(buoys) == 0:
             print("Invalid buoy object used!")
             return "Invalid buoy object used!"
